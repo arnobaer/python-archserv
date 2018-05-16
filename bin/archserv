@@ -7,7 +7,17 @@ import argparse
 import geojson
 import sys, os
 
-DEFAULT_CRS = "urn:ogc:def:crs:EPSG::31256" # Austria M34 East
+CRS_M34 = "urn:ogc:def:crs:EPSG::31256" # Austria M34 East
+CRS_M31 = "urn:ogc:def:crs:EPSG::31255" # Austria M31 Central
+CRS_M28 = "urn:ogc:def:crs:EPSG::31254" # Austria M28 West
+
+DEFAULT_CRS = CRS_M34
+
+ALL_CRS = {
+    "Austria M34 East": CRS_M34,
+    "Austria M31 Central": CRS_M31,
+    "Austria M28 West": CRS_M28,
+}
 
 def writable_t(filename):
     """Checks for writable target location."""
@@ -22,9 +32,10 @@ def writable_t(filename):
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("filename")
-    parser.add_argument("--crs", default=DEFAULT_CRS, help="CRS code")
-    parser.add_argument("--export-spatialite", type=writable_t, help="export to SpatiaLite database file")
-    parser.add_argument("--export-geojson", type=writable_t, help="export to GeoJSON directory")
+    parser.add_argument("--crs", default=DEFAULT_CRS, help="CRS code, default is {}".format(DEFAULT_CRS))
+    parser.add_argument("--list-crs", action="store_true", help="list available CRS")
+    parser.add_argument("--export-geojson", metavar="<dir>", type=writable_t, help="export to GeoJSON directory")
+    parser.add_argument("-v", "--verbose", action="store_true", help="verbose messages")
     return parser.parse_args()
 
 def export_geojson(features, dirname, crs):
@@ -40,26 +51,26 @@ def export_geojson(features, dirname, crs):
                 continue
             first = points[0]
             # Polygons
-            if first.key.code in (03, 05, 93):
+            if first.key.code in archserv.PolygonTypes:
                 geometries = [point.xyz for point in points] + [first.xyz] # close the polygon!
                 features.append(geojson.Feature(
                     geometry=geojson.Polygon([geometries]),
-                    properties=dict(stratum=first.key.stratum, group=first.key.group, type=first.key.code, code=first.code)
+                    properties=dict(context=first.key.context, group=first.key.group, type=first.key.code, code=first.code)
                 ))
             # Lines
-            elif first.key.code in (02, 04):
+            elif first.key.code in archserv.LineTypes:
                 geometries = [point.xyz for point in points]
                 features.append(geojson.Feature(
                     geometry=geojson.LineString(geometries),
-                    properties=dict(stratum=first.key.stratum, group=first.key.group, type=first.key.code, code=first.code)
+                    properties=dict(context=first.key.context, group=first.key.group, type=first.key.code, code=first.code)
                 ))
             # Points
-            elif first.key.code in (01, 11, 71, 81):
+            elif first.key.code in archserv.PointTypes:
                 codename = first.code
                 for point in points:
                     features.append(geojson.Feature(
                         geometry=geojson.Point(point.xyz),
-                        properties=dict(stratum=first.key.stratum, group=first.key.group, type=first.key.code, height=first.z, code=first.code)
+                        properties=dict(context=first.key.context, group=first.key.group, type=first.key.code, height=first.z, code=first.code)
                     ))
             else:
                 for point in points:
@@ -74,59 +85,22 @@ def export_geojson(features, dirname, crs):
         #
         # Write to file
         #
-        stratum, code = key
-        path = os.path.join(dirname, "{0:04d}".format(stratum))
+        context, code = key
+        path = os.path.join(dirname, "{0:04d}".format(context))
         if not os.path.exists(path):
             os.makedirs(path)
-        filename = os.path.join(path, "SE{0:04d}_{1:02d}.geojson".format(stratum, code))
+        filename = os.path.join(path, "SE{0:04d}_{1:02d}.geojson".format(context, code))
         with open(filename, "wb") as fp:
             geojson.dump(collection, fp)
 
-    # # Create features
-    # for senr, stratum in strata.iteritems():
-    #     codename = ""
-    #     features = []
-    #     for _, code in stratum.iteritems():
-    #         for _, group in code.iteritems():
-    #             if group and group[0].id.code in (03, 05, 93):
-    #                 geometries = []
-    #                 codename = group[0].code
-    #                 geometries.append(
-    #                     [point.coordinate for point in group] + [group[0].coordinate] # close the polygon!
-    #                 )
-    #                 features.append(geojson.Feature(geometry=geojson.Polygon(geometries), properties={"se":group[0].id.id, "group":group[0].id.group, "code":group[0].id.code}))
-    #             elif group and group[0].id.code in (01, ):
-    #                 geometries = []
-    #                 codename = group[0].code
-    #                 for point in group:
-    #                     features.append(geojson.Feature(geometry=geojson.Point([point.x,point.y]), properties={"se":group[0].id.id, "group":group[0].id.group, "code":group[0].id.code, "x":group[0].x, "y":group[0].y, "z":group[0].z}))
-    #     if features:
-    #         collection = geojson.FeatureCollection(features, crs={ "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::31256" }})
-    #         with open("se_{:04d}_{}.geojson".format(senr, codename.lower()), "w") as fp:
-    #             import pprint
-    #             print "SE NR ", senr
-    #             pprint.pprint(collection)
-    #             geojson.dump(collection, fp)
-    # #
-    # # for key, group in groups.iteritems():
-    # #     geometries = []
-    # #     if group[0].id.code in (03, 05, 93):
-    # #         geometries.append(
-    # #             [point.coordinate for point in group] + [group[0].coordinate] # close the polygon!
-    # #         )
-    # #         features.append(geojson.Feature(geometry=geojson.Polygon(geometries), properties={"id":group[0].id.id, "group":group[0].id.group, "code":group[0].id.code}))
-    # #     elif group[0].id.code == 81:
-    # #         for point in group:
-    # #             features.append(geojson.Feature(geometry=geojson.Point(geometries)))
-    #
-    # #collection = geojson.FeatureCollection(features, crs={ "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::31256" }})
-    # #for line in parser.stations:
-    # #    print line
-    # #print geojson.dumps(collection)
-
-
 def main():
     args = parse_args()
+
+    if args.list_crs:
+        for name, code in ALL_CRS.iteritems():
+            sys.stdout.write("{}: {}{}".format(name, code, os.linesep))
+        return 0
+
     parser = archserv.ArchServ()
 
     # Read from file
@@ -135,10 +109,8 @@ def main():
 
     features = parser.features()
 
-    pprint(features)
-
-    if args.export_spatialite:
-        pass
+    if args.verbose:
+        pprint(features)
 
     if args.export_geojson:
         export_geojson(features, args.export_geojson, args.crs)

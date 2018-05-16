@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 #
 # archserv  parser for ArchServ surveilance data
-# Copyright (C) 2014-2016  Bernhard Arnold <bernhard.arnold@cern.ch>
+# Copyright (C) 2014-2018  Bernhard Arnold <bernhard.arnold@burgried.at>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -24,35 +24,66 @@ __version__ = "0.1.0"
 __all__ = ["ArchServ"]
 
 RegExCode = re.compile(r'^(\d{4})([A-Z])(\d{2})(\d{3})$')
-RegExPoint = re.compile(r'^([\w]{,10})\s+(\-?\d+\.\d+)\s+(\-?\d+\.\d+)\s+(\-?\d+\.\d+)(?:\s+(\w+))$')
+"""Regular expression for point codes."""
 
-Codes = {
-    00: "Nail",
-    01: "Height",
-    11: "Point",
-    02: "PolylineOpen",
-    03: "PolylineClosed",
-    04: "SplineOpen",
-    05: "SplineClosed",
-    06: "Circle",
-    71: "Find",
-    81: "ControlPoint",
-    91: "FixedPoint",
-    92: "BoundaryOpen",
-    93: "BoundaryClosed",
-}
+RegExPoint = re.compile(r'^(\w+)\s+(\-?\d+\.\d+)\s+(\-?\d+\.\d+)\s+(\-?\d+\.\d+)(?:\s+(\w+))?$')
+"""Regular expression for measured points. Both stations and measurements are
+supported.
 
-class ArchServKey(object):
+Station format: '<station> <x> <y> <z>'
+
+Point format: '<key> <x> <y> <z> <code>'
+"""
+
+class Codes:
+    Nail = 0
+    Height = 1
+    Point = 11
+    PolylineOpen = 2
+    PolylineClosed = 3
+    SplineOpen = 4
+    SplineClosed = 5
+    Circle = 6
+    Find = 71
+    ControlPoint = 81
+    FixedPoint = 91
+    BoundaryOpen = 92
+    BoundaryClosed = 93
+
+PointTypes = (
+    Codes.Nail,
+    Codes.Height,
+    Codes.Point,
+    Codes.Circle,
+    Codes.Find,
+    Codes.ControlPoint,
+    Codes.FixedPoint,
+)
+
+LineTypes = (
+    Codes.PolylineOpen,
+    Codes.SplineOpen,
+    Codes.BoundaryOpen,
+)
+
+PolygonTypes = (
+    Codes.PolylineClosed,
+    Codes.SplineClosed,
+    Codes.BoundaryClosed,
+)
+
+class Key(object):
     """Encoded point key."""
 
-    def __init__(self, stratum, group, code, index):
-        self.stratum = int(stratum)
+    def __init__(self, context, group, code, index):
+        self.context = int(context)
         self.group = group.upper()
         self.code = int(code)
         self.index = int(index)
 
     def tuple(self):
-        return self.stratum, self.group, self.code, self.index
+        """Returns a sortable tuple."""
+        return self.context, self.group, self.code, self.index
 
     def __lt__(self, other):
         """Sortable by attributes."""
@@ -62,9 +93,9 @@ class ArchServKey(object):
         return str(self.__dict__)
 
     def __str__(self):
-        return "{stratum:04d}{group}{code:02d}{index:03d}".format(**self.__dict__)
+        return "{context:04d}{group}{code:02d}{index:03d}".format(**self.__dict__)
 
-class ArchServPoint(object):
+class Point(object):
 
     def __init__(self):
         self.key = ""
@@ -72,6 +103,7 @@ class ArchServPoint(object):
         self.y = 0.
         self.z = 0.
         self.code = ""
+        self.is_station = False
 
     @property
     def xyz(self):
@@ -88,10 +120,12 @@ class ArchServPoint(object):
         self.y = float(result.group(3))
         self.z = float(result.group(4))
         self.code = result.group(5)
+        self.is_station = True
         # Convert key to object if encoded
         result = RegExCode.match(self.key)
         if result:
-            self.key = ArchServKey(*result.groups())
+            self.key = Key(*result.groups())
+            self.is_station = False
 
     def __lt__(self, other):
         """Make sortable by point key."""
@@ -111,17 +145,22 @@ class ArchServ(object):
     def read(self, fp):
         """Read from file stream."""
         for line in fp:
-            point = ArchServPoint()
+            # Clean input line from newlines
+            line = line.strip()
+            # Skip empty lines
+            if not line:
+                continue
+            point = Point()
             point.parse(line)
-            if isinstance(point.key, ArchServKey):
-                self.points.append(point)
-            else:
+            if point.is_station:
                 self.stations.append(point)
+            else:
+                self.points.append(point)
 
     def features(self):
         features = {}
         for point in sorted(self.points):
-            key = point.key.stratum, point.key.code
+            key = point.key.context, point.key.code
             group = point.key.group
             if key not in features:
                 features[key] = {}
@@ -129,3 +168,11 @@ class ArchServ(object):
                 features[key][group] = []
             features[key][group].append(point)
         return features
+
+def load(fp, crs=None):
+    """Load data from iteratable and returns a GeoJSON FeatureCollection object."""
+    pass
+
+def loads(s, crs=None):
+    """Load data from string and returns a GeoJSON FeatureCollection object."""
+    pass
