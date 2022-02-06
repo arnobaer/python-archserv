@@ -19,6 +19,7 @@ ALL_CRS = {
     "Austria M28 West": CRS_M28,
 }
 
+
 def writable_t(filename):
     """Checks for writable target location."""
     if os.path.exists(filename):
@@ -29,6 +30,7 @@ def writable_t(filename):
             raise IOError("not writable: {0}".format(filename))
     return filename
 
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("filename")
@@ -38,9 +40,10 @@ def parse_args():
     parser.add_argument("-v", "--verbose", action="store_true", help="verbose messages")
     return parser.parse_args()
 
+
 def export_geojson(features, dirname, crs):
     os.makedirs(dirname)
-    for key, groups in features.iteritems():
+    for key, groups in features.items():
         #
         # build geojson
         #
@@ -74,7 +77,7 @@ def export_geojson(features, dirname, crs):
                     ))
             else:
                 for point in points:
-                    print "ERROR:", point
+                    print("ERROR:", point)
         if not features:
             continue # Just in case prevent creating an empty layer
         collection = geojson.FeatureCollection(
@@ -90,21 +93,22 @@ def export_geojson(features, dirname, crs):
         if not os.path.exists(path):
             os.makedirs(path)
         filename = os.path.join(path, "SE{0:04d}_{1:02d}.geojson".format(context, code))
-        with open(filename, "wb") as fp:
+        with open(filename, "w") as fp:
             geojson.dump(collection, fp)
+
 
 def main():
     args = parse_args()
 
     if args.list_crs:
-        for name, code in ALL_CRS.iteritems():
+        for name, code in ALL_CRS.items():
             sys.stdout.write("{}: {}{}".format(name, code, os.linesep))
         return 0
 
     parser = archserv.ArchServ()
 
     # Read from file
-    with open(args.filename, "rb") as fp:
+    with open(args.filename, "r") as fp:
         parser.read(fp)
 
     features = parser.features()
